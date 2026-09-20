@@ -32,19 +32,11 @@ public class CredentialRedactor : IRedactor
 	/// </summary>
 	private sealed class Rule
 	{
-		public Rule(string name, Regex pattern, bool isolatesTheSecret)
+		public Rule(Regex pattern, bool isolatesTheSecret)
 		{
-			Name = name;
 			Pattern = pattern;
 			IsolatesTheSecret = isolatesTheSecret;
 		}
-
-		/// <summary>
-		/// What <see cref="RedactionMode.Label"/> says when the caller supplied neither a label nor a
-		/// key. A constant chosen here in the code - never anything lifted out of the matched text,
-		/// which would put part of the input back into output that promises to carry none of it.
-		/// </summary>
-		public string Name { get; }
 
 		public Regex Pattern { get; }
 
@@ -77,15 +69,13 @@ public class CredentialRedactor : IRedactor
 		// whole "user:password" pair, which is composite - its tail is the password - so it never
 		// masks.
 		new Rule(
-			"userinfo"
-			, new Regex(@"\b[a-zA-Z][a-zA-Z0-9+.\-]*://(?<secret>[^/@\s]+)@", RegexOptions.Compiled | RegexOptions.CultureInvariant)
+			new Regex(@"\b[a-zA-Z][a-zA-Z0-9+.\-]*://(?<secret>[^/@\s]+)@", RegexOptions.Compiled | RegexOptions.CultureInvariant)
 			, isolatesTheSecret: false
 		),
 
 		// password=secret / pwd=secret in key-value connection strings and query strings.
 		new Rule(
-			"password"
-			, new Regex(@"\b(?:password|pwd)\s*=\s*(?<secret>[^;&\s""']+)", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)
+			new Regex(@"\b(?:password|pwd)\s*=\s*(?<secret>[^;&\s""']+)", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)
 			, isolatesTheSecret: true
 		),
 
@@ -96,8 +86,7 @@ public class CredentialRedactor : IRedactor
 		// deliberately not in the list - the first rule already takes the password out of one and
 		// leaves the host and database, which is the more useful answer.
 		new Rule(
-			"apikey"
-			, new Regex(@"""[^""\\]*(?:password|pwd|secret|token|apikey|api_key)[^""\\]*""\s*:\s*""(?<secret>[^""\\]*)""", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)
+			new Regex(@"""[^""\\]*(?:password|pwd|secret|token|apikey|api_key)[^""\\]*""\s*:\s*""(?<secret>[^""\\]*)""", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)
 			, isolatesTheSecret: true
 		),
 	];
@@ -139,7 +128,7 @@ public class CredentialRedactor : IRedactor
 	private string Splice(Match match, Rule rule, RedactorOptions options)
 	{
 		var secret = match.Groups["secret"];
-		var replacement = options.Hide(secret.Value, rule.IsolatesTheSecret, rule.Name);
+		var replacement = options.Hide(secret.Value, rule.IsolatesTheSecret);
 
 		var offset = secret.Index - match.Index;
 		return match.Value.Substring(0, offset) + replacement + match.Value.Substring(offset + secret.Length);

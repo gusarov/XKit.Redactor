@@ -61,10 +61,17 @@ public class RedactorOptions
 	/// would not parse".
 	///
 	/// <para>
-	/// The highest priority of three sources. A redactor resolves the label as
-	/// <c>Label ?? Key ?? &lt;name of the rule that matched&gt;</c>, so the mode is useful with
-	/// nobody passing anything, and exact where somebody does. With none of the three resolvable the
-	/// output falls back to the plain mask token, i.e. to <see cref="RedactionMode.Erase"/>.
+	/// <b>Labels are caller-driven.</b> A redactor resolves one as <c>Label ?? Key</c> and stops
+	/// there - both come from the caller, and no redactor ever authors one of its own. With neither
+	/// set, <see cref="RedactionMode.Label"/> is exactly <see cref="RedactionMode.Erase"/>.
+	/// </para>
+	///
+	/// <para>
+	/// That is deliberate, and not only for safety. A rule that matches inside a larger text leaves
+	/// the surrounding structure readable on purpose, so a label the package invented there could
+	/// only restate what is already on screen - <c>mongodb://●●●userinfo●●●@host/db</c> says nothing
+	/// the <c>://…@</c> did not. A label earns its place where the <i>whole</i> value is hidden and
+	/// no context survives to speak for it.
 	/// </para>
 	///
 	/// <para>
@@ -89,11 +96,7 @@ public class RedactorOptions
 	/// <see cref="RedactionMode.Mask"/> apply - it reveals both ends, and on a composite span the
 	/// revealed end can be the secret itself.
 	/// </param>
-	/// <param name="fallbackLabel">
-	/// What the redactor itself knows - the name of the rule that matched, say. Lowest priority,
-	/// behind <see cref="Label"/> and <see cref="Key"/>.
-	/// </param>
-	public string Hide(string secret, bool isolated = true, string? fallbackLabel = null)
+	public string Hide(string secret, bool isolated = true)
 	{
 		switch (Mode)
 		{
@@ -103,7 +106,7 @@ public class RedactorOptions
 					: MaskToken;
 
 			case RedactionMode.Label:
-				var label = FirstNonEmpty(Label, Key, fallbackLabel);
+				var label = FirstNonEmpty(Label, Key);
 				if (label is null)
 				{
 					return MaskToken;

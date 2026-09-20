@@ -58,16 +58,16 @@ Label keeps that same property, which is why it does *not* simply return the pla
 "Hidden because secret" and "hidden because broken" otherwise look identical to whoever reads the log — different faults needing different fixes, reported the same way. `Label` wraps a label in the mask token's ends instead of the value:
 
 ```
-●●●●●●●●                    →  ●●●MongoConfigurationException●●●
-mongodb://●●●●●●●●@host/db  →  mongodb://●●●userinfo●●●@host/db
-{ "ApiKey": "●●●●●●●●" }    →  { "ApiKey": "●●●apikey●●●" }
+●●●●●●●●  →  ●●●MongoConfigurationException●●●
 ```
 
-The label resolves as **`options.Label` → `options.Key` → the name of the rule that matched**, so the mode is useful with nobody passing anything and exact where somebody does. With none of the three resolvable it falls back to the plain token, i.e. to `Erase`.
+**Labels are caller-driven.** The label resolves as **`options.Label` → `options.Key`** and stops there; no redactor ever authors one of its own. With neither set, `Label` is byte-for-byte `Erase`.
+
+That is deliberate, and not only for safety. The rules preserve the structure around what they hide — that is why host and database survive — so a label the package invented could only restate what is already on screen: `mongodb://●●●userinfo●●●@host/db` says nothing the `://…@` did not, and `Password=●●●password●●●` says nothing the `Password=` did not. A label earns its place where the **whole** value is hidden and no context survives to speak for it.
 
 > **The label must be something the code chose — a key name, a rule name, a type name. Never anything read out of the value.**
 
-`ex.GetType().Name` is safe. `ex.Message` is not, and neither is the value's length, its first characters, or whether it was null. Every rule in this repo labels itself with a constant for exactly that reason. A label *does* disclose the kind of secret — `●●●apikey●●●` says an API key was there — which is the point of the mode rather than a side effect, but it is a decision on the record. `Label` and `Mask` are mutually exclusive: a label and a partial reveal in one output is nothing anybody wants.
+`ex.GetType().Name` is safe. `ex.Message` is not, and neither is the value's length, its first characters, or whether it was null. Since the package authors no labels at all, this rule has exactly one place to be broken — a call site — rather than one per rule. A label *does* disclose the kind of secret — `●●●apikey●●●` says an API key was there — which is the point of the mode rather than a side effect, but it is a decision on the record. `Label` and `Mask` are mutually exclusive: a label and a partial reveal in one output is nothing anybody wants.
 
 Where the caller has already isolated the value and no rule could match it — a connection string too malformed to parse — hide it whole:
 
