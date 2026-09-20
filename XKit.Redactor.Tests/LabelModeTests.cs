@@ -1,8 +1,8 @@
 namespace XKit.Redactor.Tests;
 
 /// <summary>
-/// <see cref="RedactionMode.Label"/> - nothing of the value survives, and something about its
-/// context is said instead, so "hidden because secret" and "hidden because broken" stop looking
+/// <see cref="RedactionMode.Label"/> - nothing of the value survives, and something the caller
+/// knows is said instead, so "hidden because secret" and "hidden because broken" stop looking
 /// identical to whoever reads the log.
 /// </summary>
 public class LabelModeTests
@@ -31,37 +31,44 @@ public class LabelModeTests
 		yield return new TestCaseData(new EntropyRedactor(_dictionary)).SetArgDisplayNames(nameof(EntropyRedactor));
 	}
 
+	/// <summary>
+	/// Labels are caller-driven. No redactor authors one of its own - not the name of the rule that
+	/// matched, not what tripped the detector, nothing. Where a rule matches inside a larger text
+	/// the surrounding structure is preserved on purpose, so an invented label could only restate
+	/// what is already on screen: <c>mongodb://●●●userinfo●●●@host</c> says nothing the
+	/// <c>://…@</c> did not.
+	/// </summary>
 	[Test]
-	public void Should_say_which_rule_matched_when_nobody_supplied_a_label()
+	[TestCaseSource(nameof(Redactors))]
+	public void Should_not_invent_a_label(IRedactor redactor)
 	{
-		// The reason it is a mode rather than a helper: every rule gets it, with no caller cooperation.
+		var options = Labelled();
+
 		Assert.Multiple(() =>
 		{
-			Assert.That(
-				_credential.Redact($"mongodb://apex:{Secret}@mongo.xkit.tools/db", Labelled())
-				, Is.EqualTo($"mongodb://●●●userinfo●●●@mongo.xkit.tools/db")
-			);
-			Assert.That(
-				_credential.Redact($"Server=db;Password={Secret};Encrypt=true", Labelled())
-				, Is.EqualTo("Server=db;Password=●●●password●●●;Encrypt=true")
-			);
-			Assert.That(
-				_credential.Redact($"{{ \"ApiKey\": \"{Secret}\" }}", Labelled())
-				, Is.EqualTo("{ \"ApiKey\": \"●●●apikey●●●\" }")
-			);
+			Assert.That(redactor.Redact($"mongodb://apex:{Secret}@mongo.xkit.tools/db", options), Is.EqualTo(redactor.Redact($"mongodb://apex:{Secret}@mongo.xkit.tools/db")));
+			Assert.That(redactor.Redact($"Server=db;Password={Secret}", options), Is.EqualTo(redactor.Redact($"Server=db;Password={Secret}")));
+			Assert.That(redactor.Redact($"{{ \"ApiKey\": \"{Secret}\" }}", options), Is.EqualTo(redactor.Redact($"{{ \"ApiKey\": \"{Secret}\" }}")));
 		});
 	}
 
 	[Test]
-	public void Should_resolve_the_label_as_label_then_key_then_rule_name()
+	public void Should_be_exactly_erase_when_the_caller_names_nothing()
+	{
+		var text = $"mongodb://apex:{Secret}@mongo.xkit.tools/db and Password={Secret}";
+
+		Assert.That(_credential.Redact(text, Labelled()), Is.EqualTo(_credential.Redact(text)));
+	}
+
+	[Test]
+	public void Should_prefer_an_explicit_label_over_the_key()
 	{
 		var text = $"Server=db;Password={Secret}";
 
 		Assert.Multiple(() =>
 		{
-			Assert.That(_credential.Redact(text, Labelled(label: "chosen", key: "Some:Key")), Does.Contain("●●●chosen●●●"), "an explicit label wins");
-			Assert.That(_credential.Redact(text, Labelled(key: "Some:Key")), Does.Contain("●●●Some:Key●●●"), "then the key");
-			Assert.That(_credential.Redact(text, Labelled()), Does.Contain("●●●password●●●"), "then the rule that matched");
+			Assert.That(_credential.Redact(text, Labelled(label: "chosen", key: "Some:Key")), Does.Contain("●●●chosen●●●"));
+			Assert.That(_credential.Redact(text, Labelled(key: "Some:Key")), Does.Contain("●●●Some:Key●●●"), "the key the caller passed is still the caller's");
 		});
 	}
 
@@ -142,9 +149,9 @@ public class LabelModeTests
 	[Test]
 	public void Should_hide_a_whole_value_the_caller_has_already_isolated()
 	{
-		// The ApexTroid case: a connection string that will not parse, so there is nothing safe to
-		// say about it and nothing for a rule to match either. The caller knows the reason; the
-		// redactor could never work it out.
+		// The case the mode was asked for: a connection string that will not parse, so there is
+		// nothing safe to say about it and nothing for a rule to match either. The caller knows the
+		// reason; the redactor could never work it out.
 		var reason = new FormatException().GetType().Name;
 		var described = Labelled(label: reason).Hide("mongodb://not even close to valid", isolated: false);
 
@@ -152,24 +159,14 @@ public class LabelModeTests
 	}
 
 	[Test]
-	public void Should_say_what_tripped_the_entropy_detector()
+	public void Should_use_the_same_label_for_every_secret_in_one_text()
 	{
-		// Opaque today: it hides something the caller did not expect and cannot say why.
-		var entropy = new EntropyRedactor(_dictionary);
+		// A label says why the caller is hiding things, and that reason does not change halfway
+		// along the line. What distinguishes the two here is the context each one sits in, which the
+		// rules preserve - not the label.
+		var redacted = _credential.Redact($"mongodb://apex:{Secret}@host/db and pwd={Secret}", Labelled(label: "unparseable"));
 
-		Assert.Multiple(() =>
-		{
-			Assert.That(entropy.Redact("5b909a45-86fd-4e94-9c8e-4f396fdf6324", Labelled()), Is.EqualTo("●●●guid●●●"));
-			Assert.That(entropy.Redact("mongodb://bob:8dfaec50e181fedcba@localhost/db", Labelled()), Does.Contain("●●●uri-password●●●"));
-		});
-	}
-
-	[Test]
-	public void Should_apply_the_label_to_every_secret_found_independently()
-	{
-		var redacted = _credential.Redact($"pwd=First{Secret} and pwd=Second{Secret}", Labelled());
-
-		Assert.That(redacted, Is.EqualTo("pwd=●●●password●●● and pwd=●●●password●●●"));
+		Assert.That(redacted, Is.EqualTo("mongodb://●●●unparseable●●●@host/db and pwd=●●●unparseable●●●"));
 	}
 
 	[Test]
@@ -177,7 +174,7 @@ public class LabelModeTests
 	{
 		// Three asterisks halve to one per side, so the label is wrapped in what the caller chose.
 		Assert.That(
-			_credential.Redact($"Password={Secret}", Labelled(token: "***"))
+			_credential.Redact($"Password={Secret}", Labelled(label: "password", token: "***"))
 			, Is.EqualTo("Password=*password*")
 		);
 	}

@@ -68,13 +68,13 @@ public class EntropyRedactor : IRedactor
 		}
 
 		// A GUID anywhere is hidden before anything else looks at the text.
-		value = _guidRx.Replace(value, match => Hide(match.Value, options, "guid"));
+		value = _guidRx.Replace(value, match => Hide(match.Value, options));
 
 		// The password in an absolute URI is hidden whatever it looks like.
 		if (Uri.TryCreate(value, UriKind.Absolute, out var uri) && !string.IsNullOrEmpty(uri.UserInfo))
 		{
 			var builder = new UriBuilder(uri);
-			builder.Password = Hide(builder.Password, options, "uri-password");
+			builder.Password = Hide(builder.Password, options);
 			value = builder.ToString();
 		}
 
@@ -130,7 +130,7 @@ public class EntropyRedactor : IRedactor
 
 			if (entropy >= threshold)
 			{
-				result.Append(Hide(token.ToString(), options, "entropy"));
+				result.Append(Hide(token.ToString(), options));
 				hiddenLength += token.Length;
 			}
 			else
@@ -142,7 +142,7 @@ public class EntropyRedactor : IRedactor
 		// Pure base64 with most of it hidden and no real words in it: one token, not a patchwork.
 		if (hiddenLength * 1.0 / value.Length > 0.5 && longWordsFound < 2 && _base64Rx.IsMatch(value))
 		{
-			return Hide(value, options, "base64");
+			return Hide(value, options);
 		}
 
 		return result.ToString();
@@ -151,13 +151,10 @@ public class EntropyRedactor : IRedactor
 	/// <summary>
 	/// Every span this detector hides is the secret and nothing else - a token, a GUID, a URI
 	/// password, a whole base64 value - so masking is safe in every case.
-	/// <paramref name="fallbackLabel"/> says which of those it was, for
-	/// <see cref="RedactionMode.Label"/>, and is a constant chosen here rather than anything read
-	/// out of the value.
 	/// </summary>
-	private string Hide(string secret, RedactorOptions options, string fallbackLabel)
+	private string Hide(string secret, RedactorOptions options)
 	{
-		return options.Hide(secret, isolated: true, fallbackLabel);
+		return options.Hide(secret, isolated: true);
 	}
 
 	private double EntropyOfUnknownPart(string source)

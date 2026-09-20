@@ -43,12 +43,12 @@ public static class SecretRedactionExtensions
 		}
 
 		var isUrlShaped = secret!.IndexOf("://", StringComparison.Ordinal) >= 0;
-		var redacted = text!.Replace(secret, options.Hide(secret, isolated: !isUrlShaped, fallbackLabel: isUrlShaped ? "url" : "secret"));
+		var redacted = text!.Replace(secret, options.Hide(secret, isolated: !isUrlShaped));
 
 		var password = PasswordOf(secret);
 		if (password.Length >= MinimumDistinctiveLength)
 		{
-			redacted = redacted.Replace(password, options.Hide(password, isolated: true, fallbackLabel: "password"));
+			redacted = redacted.Replace(password, options.Hide(password, isolated: true));
 		}
 
 		return redacted;
