@@ -4,7 +4,7 @@ One contract for taking secrets out of text before it goes somewhere it cannot b
 
 | Package | Targets | What is in it |
 | --- | --- | --- |
-| `XKit.Redactor` | netstandard2.0, netstandard2.1, net8.0, net9.0, net10.0 | `IRedactor`, `RedactorOptions`, `RedactionMode`, the rule-based `CredentialRedactor`, `RedactedException`, `Mask()` and `Redact(secret)` string helpers |
+| `XKit.Redactor` | netstandard2.0, netstandard2.1, net8.0, net9.0, net10.0 | `IRedactor`, `RedactorOptions`, `RedactionMode`, the rule-based `CredentialRedactor`, `RedactorException`, `Mask()` and `Redact(secret)` string helpers |
 | `XKit.Redactor.Implementation` | net8.0, net9.0, net10.0 | `EntropyRedactor` - finds secrets by how random they look, with an embedded English + developer word list |
 
 ## The contract
@@ -19,12 +19,23 @@ public interface IRedactor
 public class RedactorOptions
 {
 	public string? Key { get; set; }                              // where the value was found - a config key, a header name; a hint, not a decision
-	public RedactionMode Mode { get; set; } = RedactionMode.Erase; // Erase: nothing survives. Mask: up to 3 characters per end survive
+	public RedactionMode Mode { get; set; } = RedactionMode.Erase; // Erase / Mask / Label - see below
 	public string MaskToken { get; set; } = "●●●●●●●●";           // fixed width on purpose - never leaks the length
+	public string? Label { get; set; }                            // what Label mode says instead of the value
 }
 ```
 
 The key-shaped call `redactor.Redact(value, "Some:Key")` is an extension method and keeps working.
+
+### The three modes
+
+`Erase` and `Mask` trade off how much of the *value* survives. `Label` is a different axis: nothing of the value survives, and something about its *context* is said instead.
+
+| Mode | Reveals about the value | Reveals about the context |
+| --- | --- | --- |
+| `Erase` (default) | nothing | nothing |
+| `Mask` | up to 3 characters per end | nothing |
+| `Label` | nothing | what it was, or why it is hidden |
 
 ### Null and empty
 
@@ -32,12 +43,40 @@ The key-shaped call `redactor.Redact(value, "Some:Key")` is an extension method 
 | --- | --- | --- |
 | `Erase` (default) | mask token | mask token |
 | `Mask` | `null` | `""` |
+| `Label` | mask token | mask token |
 
-Erase never says whether there was anything, so a log line cannot be read to mean "this one is not configured". Mask already reveals something about every secret it touches, so revealing that there was none is consistent with it.
+Erase never says whether there was anything, so a log line cannot be read to mean "this one is not configured". Mask already reveals something about every secret it touches, so revealing that there was none is consistent with it. Label reveals nothing of the value either, so it follows Erase.
 
 ### Mask never applies to a composite span
 
 `Mask` reveals both ends of whatever it is given. That is safe on a value that is entirely a secret - a token, a GUID, a password on its own - and unsafe on anything that merely *contains* one: `user:password` masked would reveal the password's last characters. Every rule in this repo declares whether its captured span is isolated, and a composite span erases in every mode. Do not lose this when adding a rule.
+
+### `Label`: saying why, without saying what
+
+"Hidden because secret" and "hidden because broken" otherwise look identical to whoever reads the log — different faults needing different fixes, reported the same way. `Label` wraps a label in the mask token's ends instead of the value:
+
+```
+●●●●●●●●                    →  ●●●MongoConfigurationException●●●
+mongodb://●●●●●●●●@host/db  →  mongodb://●●●userinfo●●●@host/db
+{ "ApiKey": "●●●●●●●●" }    →  { "ApiKey": "●●●apikey●●●" }
+```
+
+The label resolves as **`options.Label` → `options.Key` → the name of the rule that matched**, so the mode is useful with nobody passing anything and exact where somebody does. With none of the three resolvable it falls back to the plain token, i.e. to `Erase`.
+
+> **The label must be something the code chose — a key name, a rule name, a type name. Never anything read out of the value.**
+
+`ex.GetType().Name` is safe. `ex.Message` is not, and neither is the value's length, its first characters, or whether it was null. Every rule in this repo labels itself with a constant for exactly that reason. A label *does* disclose the kind of secret — `●●●apikey●●●` says an API key was there — which is the point of the mode rather than a side effect, but it is a decision on the record. `Label` and `Mask` are mutually exclusive: a label and a partial reveal in one output is nothing anybody wants.
+
+Where the caller has already isolated the value and no rule could match it — a connection string too malformed to parse — hide it whole:
+
+```csharp
+catch (MongoConfigurationException ex)
+{
+	// nothing safe to say about the string itself, so say why instead
+	return new RedactorOptions { Mode = RedactionMode.Label, Label = ex.GetType().Name }
+		.Hide(connectionString, isolated: false);
+}
+```
 
 ## Which redactor
 
@@ -50,14 +89,14 @@ services.AddSingleton(new WordDictionary(["poloniex", "apextroid"])); // product
 services.AddSingleton<IRedactor, EntropyRedactor>();
 ```
 
-## Wrapping a failure: `RedactedException`
+## Wrapping a failure: `RedactorException`
 
 Hiding a secret is a legitimate reason to wrap an exception. It is never a reason to drop one — so this type has **no constructor that omits the inner exception**, and the message is redacted on construction so a call site cannot hand it raw text:
 
 ```csharp
 catch (MongoConfigurationException ex)
 {
-	throw new RedactedException($"ConnectionStrings:Default is not valid ({connectionString})", ex);
+	throw new RedactorException($"ConnectionStrings:Default is not valid ({connectionString})", ex);
 }
 ```
 

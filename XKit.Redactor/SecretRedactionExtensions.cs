@@ -30,12 +30,11 @@ public static class SecretRedactionExtensions
 	[return: NotNullIfNotNull(nameof(text))]
 	public static string? Redact(this string? text, string? secret, RedactorOptions? options = null)
 	{
-		var mode = options?.Mode ?? RedactionMode.Erase;
-		var maskToken = options?.MaskToken ?? RedactorOptions.DefaultMaskToken;
+		options ??= new RedactorOptions();
 
 		if (string.IsNullOrEmpty(text))
 		{
-			return mode == RedactionMode.Erase ? maskToken : text;
+			return options.Mode == RedactionMode.Mask ? text : options.Hide(string.Empty, isolated: false);
 		}
 
 		if (string.IsNullOrEmpty(secret))
@@ -44,22 +43,15 @@ public static class SecretRedactionExtensions
 		}
 
 		var isUrlShaped = secret!.IndexOf("://", StringComparison.Ordinal) >= 0;
-		var redacted = text!.Replace(secret, Hide(secret, isolated: !isUrlShaped, mode, maskToken));
+		var redacted = text!.Replace(secret, options.Hide(secret, isolated: !isUrlShaped, fallbackLabel: isUrlShaped ? "url" : "secret"));
 
 		var password = PasswordOf(secret);
 		if (password.Length >= MinimumDistinctiveLength)
 		{
-			redacted = redacted.Replace(password, Hide(password, isolated: true, mode, maskToken));
+			redacted = redacted.Replace(password, options.Hide(password, isolated: true, fallbackLabel: "password"));
 		}
 
 		return redacted;
-	}
-
-	private static string Hide(string secret, bool isolated, RedactionMode mode, string maskToken)
-	{
-		return mode == RedactionMode.Mask && isolated
-			? secret.Mask(maskToken)
-			: maskToken;
 	}
 
 	/// <summary>

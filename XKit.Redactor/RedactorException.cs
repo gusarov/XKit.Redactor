@@ -34,11 +34,11 @@ namespace XKit.Redactor;
 /// <code>
 /// catch (MongoConfigurationException ex)
 /// {
-/// 	throw new RedactedException($"ConnectionStrings:Default is not a valid connection string ({connectionString})", ex);
+/// 	throw new RedactorException($"ConnectionStrings:Default is not a valid connection string ({connectionString})", ex);
 /// }
 /// </code>
 /// </example>
-public class RedactedException : Exception
+public class RedactorException : Exception
 {
 	private readonly IRedactor _redactor;
 	private readonly RedactorOptions? _options;
@@ -59,7 +59,7 @@ public class RedactedException : Exception
 	/// Mode, key and mask token, as anywhere else. Held for the lifetime of the exception and used
 	/// again by <see cref="ToString"/>.
 	/// </param>
-	public RedactedException(string? message, Exception innerException, IRedactor? redactor = null, RedactorOptions? options = null)
+	public RedactorException(string? message, Exception innerException, IRedactor? redactor = null, RedactorOptions? options = null)
 		: base(
 			(redactor ?? CredentialRedactor.Default).Redact(message, options)
 			, innerException ?? throw new ArgumentNullException(nameof(innerException), "A redacted exception still has to carry the original: the stack trace is the part worth keeping.")

@@ -2,7 +2,7 @@ using System.Reflection;
 
 namespace XKit.Redactor.Tests;
 
-public class RedactedExceptionTests
+public class RedactorExceptionTests
 {
 	private const string Hidden = RedactorOptions.DefaultMaskToken;
 	private const string ConnectionString = "mongodb://apex:Sup3rS3cretP4ss@mongo.xkit.tools/db";
@@ -15,7 +15,7 @@ public class RedactedExceptionTests
 	[Test]
 	public void Should_offer_no_constructor_that_omits_the_inner_exception()
 	{
-		var constructors = typeof(RedactedException).GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+		var constructors = typeof(RedactorException).GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
 
 		Assert.That(constructors, Is.Not.Empty);
 		foreach (var constructor in constructors)
@@ -31,7 +31,7 @@ public class RedactedExceptionTests
 	[Test]
 	public void Should_redact_the_message_on_construction()
 	{
-		var exception = new RedactedException($"'{ConnectionString}' is not valid.", new FormatException());
+		var exception = new RedactorException($"'{ConnectionString}' is not valid.", new FormatException());
 
 		Assert.Multiple(() =>
 		{
@@ -45,7 +45,7 @@ public class RedactedExceptionTests
 	{
 		var original = new FormatException("the original");
 
-		var exception = new RedactedException("wrapped", original);
+		var exception = new RedactorException("wrapped", original);
 
 		Assert.That(exception.InnerException, Is.SameAs(original), "a copy of the text is not the exception");
 	}
@@ -63,7 +63,7 @@ public class RedactedExceptionTests
 			original = ex;
 		}
 
-		var exception = new RedactedException("wrapped", original);
+		var exception = new RedactorException("wrapped", original);
 
 		Assert.Multiple(() =>
 		{
@@ -81,7 +81,7 @@ public class RedactedExceptionTests
 	{
 		var original = new FormatException($"driver echoed {ConnectionString} back at us");
 
-		var exception = new RedactedException("could not connect", original);
+		var exception = new RedactorException("could not connect", original);
 
 		Assert.Multiple(() =>
 		{
@@ -96,7 +96,7 @@ public class RedactedExceptionTests
 	{
 		// ToString() is a sealed override, so a derived type cannot hand the secret back. This is the
 		// runtime half of that; the compile-time half is that overriding it does not build.
-		var method = typeof(RedactedException).GetMethod(nameof(ToString), BindingFlags.Public | BindingFlags.Instance);
+		var method = typeof(RedactorException).GetMethod(nameof(ToString), BindingFlags.Public | BindingFlags.Instance);
 
 		Assert.That(method!.IsFinal, Is.True, "ToString() must stay sealed or the guarantee is only a convention");
 	}
@@ -104,7 +104,7 @@ public class RedactedExceptionTests
 	[Test]
 	public void Should_fall_back_to_the_shared_credential_redactor()
 	{
-		var exception = new RedactedException($"pwd={ConnectionString}", new FormatException(), redactor: null);
+		var exception = new RedactorException($"pwd={ConnectionString}", new FormatException(), redactor: null);
 
 		Assert.That(exception.Message, Does.Not.Contain("Sup3rS3cretP4ss"));
 	}
@@ -113,7 +113,7 @@ public class RedactedExceptionTests
 	public void Should_use_the_redactor_it_is_given()
 	{
 		// A redactor that hides everything proves the argument is actually consulted.
-		var exception = new RedactedException("nothing secret here", new FormatException(), new EverythingIsSecret());
+		var exception = new RedactorException("nothing secret here", new FormatException(), new EverythingIsSecret());
 
 		Assert.Multiple(() =>
 		{
@@ -128,7 +128,7 @@ public class RedactedExceptionTests
 		var options = new RedactorOptions { MaskToken = "***" };
 		var original = new FormatException($"inner quoted {ConnectionString}");
 
-		var exception = new RedactedException($"outer quoted {ConnectionString}", original, options: options);
+		var exception = new RedactorException($"outer quoted {ConnectionString}", original, options: options);
 
 		Assert.Multiple(() =>
 		{
@@ -142,7 +142,7 @@ public class RedactedExceptionTests
 	public void Should_refuse_a_null_inner_exception()
 	{
 		Assert.That(
-			() => new RedactedException("wrapped", null!)
+			() => new RedactorException("wrapped", null!)
 			, Throws.ArgumentNullException.With.Message.Contains("stack trace")
 		);
 	}
@@ -150,7 +150,7 @@ public class RedactedExceptionTests
 	[Test]
 	public void Should_erase_a_null_message_like_any_other_value()
 	{
-		var exception = new RedactedException(null, new FormatException());
+		var exception = new RedactorException(null, new FormatException());
 
 		Assert.That(exception.Message, Is.EqualTo(Hidden), "never 'Exception of type ... was thrown'");
 	}
@@ -158,9 +158,9 @@ public class RedactedExceptionTests
 	[Test]
 	public void Should_survive_being_chained_inside_another_redacted_exception()
 	{
-		var inner = new RedactedException($"inner saw {ConnectionString}", new FormatException());
+		var inner = new RedactorException($"inner saw {ConnectionString}", new FormatException());
 
-		var outer = new RedactedException("outer", inner);
+		var outer = new RedactorException("outer", inner);
 
 		Assert.Multiple(() =>
 		{
