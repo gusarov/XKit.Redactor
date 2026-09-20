@@ -63,6 +63,8 @@ catch (MongoConfigurationException ex)
 
 The redactor is the third parameter and optional — `CredentialRedactor.Default` when omitted, which is the right answer where there is nothing to inject. `ToString()` runs the redactor over the **whole formatted chain**, so a secret quoted by the *inner* exception's message never reaches a log sink either. It is a sealed override and there is no switch to disable it: the cost is one redactor pass over text that already cost a stack-trace materialisation, and a switch is what someone flips while chasing a number in a log loop.
 
+**Throw it from the validation site, not from a `ToString()`.** A describer — a `ToString()` override, a "connection description" property — is usually formatted *by* the log line that is trying to report the problem, so throwing from one breaks the reporting instead of improving it, and can recurse. Validate where the value enters and throw there; let the describer fall back to the mask token, because by then the validation site has already failed loudly. (Found by ApexTroid adopting this: the obvious-looking place for the Mongo example was `MongoConnectionDescription.ToString()`, and the right place was `RequireUrl`.)
+
 **Check your library first.** A well-behaved one already redacts its own messages. Verified for MongoDB.Driver 3.11.2: every malformed connection string throws `MongoConfigurationException` with the password absent from both `Message` and `ToString()` — `mongodb://<hidden>@host/db`. Note that `MongoUrl.ToString()` on a *valid* url does round-trip the password in full, so the redaction is in the error path only. Write a test that fails if any of that changes.
 
 ## String helpers

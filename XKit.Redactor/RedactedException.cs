@@ -15,6 +15,13 @@ namespace XKit.Redactor;
 /// </para>
 ///
 /// <para>
+/// <b>Throw it from the validation site, not from a <c>ToString()</c>.</b> A describer is usually
+/// formatted by the very log line trying to report the problem, so throwing from one breaks the
+/// reporting rather than improving it. Validate where the value enters; let the describer fall back
+/// to the mask token, since by then the validation site has already failed loudly.
+/// </para>
+///
+/// <para>
 /// <b>Check your library before reaching for this.</b> A well-behaved one already redacts its own
 /// messages - MongoDB.Driver reports a bad connection string as
 /// <c>mongodb://&lt;hidden&gt;@host/db</c> - and where that holds, a plain wrapper with the redacted
