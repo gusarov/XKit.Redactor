@@ -60,26 +60,25 @@ public class EntropyRedactor : IRedactor
 	[return: NotNullIfNotNull(nameof(value))]
 	public string? Redact(string? value, RedactorOptions? options = null)
 	{
-		var mode = options?.Mode ?? RedactionMode.Erase;
-		var maskToken = options?.MaskToken ?? RedactorOptions.DefaultMaskToken;
+		options ??= new RedactorOptions();
 
 		if (string.IsNullOrEmpty(value))
 		{
-			return mode == RedactionMode.Erase ? maskToken : value;
+			return options.Mode == RedactionMode.Mask ? value : options.Hide(string.Empty, isolated: false);
 		}
 
 		// A GUID anywhere is hidden before anything else looks at the text.
-		value = _guidRx.Replace(value, match => Hide(match.Value, mode, maskToken));
+		value = _guidRx.Replace(value, match => Hide(match.Value, options, "guid"));
 
 		// The password in an absolute URI is hidden whatever it looks like.
 		if (Uri.TryCreate(value, UriKind.Absolute, out var uri) && !string.IsNullOrEmpty(uri.UserInfo))
 		{
 			var builder = new UriBuilder(uri);
-			builder.Password = Hide(builder.Password, mode, maskToken);
+			builder.Password = Hide(builder.Password, options, "uri-password");
 			value = builder.ToString();
 		}
 
-		var threshold = options?.KeyLooksSecret == true ? SecretKeyThreshold : DefaultThreshold;
+		var threshold = options.KeyLooksSecret ? SecretKeyThreshold : DefaultThreshold;
 
 		var result = new StringBuilder(value.Length);
 		var entropySource = new StringBuilder();
@@ -131,7 +130,7 @@ public class EntropyRedactor : IRedactor
 
 			if (entropy >= threshold)
 			{
-				result.Append(Hide(token.ToString(), mode, maskToken));
+				result.Append(Hide(token.ToString(), options, "entropy"));
 				hiddenLength += token.Length;
 			}
 			else
@@ -143,19 +142,22 @@ public class EntropyRedactor : IRedactor
 		// Pure base64 with most of it hidden and no real words in it: one token, not a patchwork.
 		if (hiddenLength * 1.0 / value.Length > 0.5 && longWordsFound < 2 && _base64Rx.IsMatch(value))
 		{
-			return Hide(value, mode, maskToken);
+			return Hide(value, options, "base64");
 		}
 
 		return result.ToString();
 	}
 
-	private string Hide(string secret, RedactionMode mode, string maskToken)
+	/// <summary>
+	/// Every span this detector hides is the secret and nothing else - a token, a GUID, a URI
+	/// password, a whole base64 value - so masking is safe in every case.
+	/// <paramref name="fallbackLabel"/> says which of those it was, for
+	/// <see cref="RedactionMode.Label"/>, and is a constant chosen here rather than anything read
+	/// out of the value.
+	/// </summary>
+	private string Hide(string secret, RedactorOptions options, string fallbackLabel)
 	{
-		// Every span this detector hides is the secret and nothing else - a token, a GUID, a URI
-		// password, a whole base64 value - so masking is safe in every case.
-		return mode == RedactionMode.Mask
-			? secret.Mask(maskToken)
-			: maskToken;
+		return options.Hide(secret, isolated: true, fallbackLabel);
 	}
 
 	private double EntropyOfUnknownPart(string source)

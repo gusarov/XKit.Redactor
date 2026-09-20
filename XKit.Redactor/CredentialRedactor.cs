@@ -32,11 +32,19 @@ public class CredentialRedactor : IRedactor
 	/// </summary>
 	private sealed class Rule
 	{
-		public Rule(Regex pattern, bool isolatesTheSecret)
+		public Rule(string name, Regex pattern, bool isolatesTheSecret)
 		{
+			Name = name;
 			Pattern = pattern;
 			IsolatesTheSecret = isolatesTheSecret;
 		}
+
+		/// <summary>
+		/// What <see cref="RedactionMode.Label"/> says when the caller supplied neither a label nor a
+		/// key. A constant chosen here in the code - never anything lifted out of the matched text,
+		/// which would put part of the input back into output that promises to carry none of it.
+		/// </summary>
+		public string Name { get; }
 
 		public Regex Pattern { get; }
 
@@ -51,7 +59,7 @@ public class CredentialRedactor : IRedactor
 
 	/// <summary>
 	/// A shared instance for callers with nowhere to keep one of their own - notably
-	/// <see cref="RedactedException"/> when it is handed no redactor. Constructing a redactor
+	/// <see cref="RedactorException"/> when it is handed no redactor. Constructing a redactor
 	/// compiles three regexes, which is far too much work to repeat per exception, and the type
 	/// holds no per-call state, so one instance is safe to share across threads.
 	///
@@ -69,13 +77,15 @@ public class CredentialRedactor : IRedactor
 		// whole "user:password" pair, which is composite - its tail is the password - so it never
 		// masks.
 		new Rule(
-			new Regex(@"\b[a-zA-Z][a-zA-Z0-9+.\-]*://(?<secret>[^/@\s]+)@", RegexOptions.Compiled | RegexOptions.CultureInvariant)
+			"userinfo"
+			, new Regex(@"\b[a-zA-Z][a-zA-Z0-9+.\-]*://(?<secret>[^/@\s]+)@", RegexOptions.Compiled | RegexOptions.CultureInvariant)
 			, isolatesTheSecret: false
 		),
 
 		// password=secret / pwd=secret in key-value connection strings and query strings.
 		new Rule(
-			new Regex(@"\b(?:password|pwd)\s*=\s*(?<secret>[^;&\s""']+)", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)
+			"password"
+			, new Regex(@"\b(?:password|pwd)\s*=\s*(?<secret>[^;&\s""']+)", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)
 			, isolatesTheSecret: true
 		),
 
@@ -86,7 +96,8 @@ public class CredentialRedactor : IRedactor
 		// deliberately not in the list - the first rule already takes the password out of one and
 		// leaves the host and database, which is the more useful answer.
 		new Rule(
-			new Regex(@"""[^""\\]*(?:password|pwd|secret|token|apikey|api_key)[^""\\]*""\s*:\s*""(?<secret>[^""\\]*)""", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)
+			"apikey"
+			, new Regex(@"""[^""\\]*(?:password|pwd|secret|token|apikey|api_key)[^""\\]*""\s*:\s*""(?<secret>[^""\\]*)""", RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)
 			, isolatesTheSecret: true
 		),
 	];
@@ -95,12 +106,11 @@ public class CredentialRedactor : IRedactor
 	[return: NotNullIfNotNull(nameof(value))]
 	public string? Redact(string? value, RedactorOptions? options = null)
 	{
-		var mode = options?.Mode ?? RedactionMode.Erase;
-		var maskToken = options?.MaskToken ?? RedactorOptions.DefaultMaskToken;
+		options ??= new RedactorOptions();
 
 		if (string.IsNullOrEmpty(value))
 		{
-			return mode == RedactionMode.Erase ? maskToken : value;
+			return options.Mode == RedactionMode.Mask ? value : options.Hide(string.Empty, isolated: false);
 		}
 
 		var found = false;
@@ -110,13 +120,13 @@ public class CredentialRedactor : IRedactor
 			redacted = rule.Pattern.Replace(redacted, match =>
 			{
 				found = true;
-				return Splice(match, rule, mode, maskToken);
+				return Splice(match, rule, options);
 			});
 		}
 
-		if (!found && options?.KeyLooksSecret == true)
+		if (!found && options.KeyLooksSecret)
 		{
-			return Hide(value!, isolated: true, mode, maskToken);
+			return options.Hide(value!, isolated: true);
 		}
 
 		return redacted;
@@ -126,19 +136,12 @@ public class CredentialRedactor : IRedactor
 	/// Splices the replacement in where the captured secret stood, so whatever the rule matched
 	/// around it is preserved verbatim.
 	/// </summary>
-	private string Splice(Match match, Rule rule, RedactionMode mode, string maskToken)
+	private string Splice(Match match, Rule rule, RedactorOptions options)
 	{
 		var secret = match.Groups["secret"];
-		var replacement = Hide(secret.Value, rule.IsolatesTheSecret, mode, maskToken);
+		var replacement = options.Hide(secret.Value, rule.IsolatesTheSecret, rule.Name);
 
 		var offset = secret.Index - match.Index;
 		return match.Value.Substring(0, offset) + replacement + match.Value.Substring(offset + secret.Length);
-	}
-
-	private string Hide(string secret, bool isolated, RedactionMode mode, string maskToken)
-	{
-		return mode == RedactionMode.Mask && isolated
-			? secret.Mask(maskToken)
-			: maskToken;
 	}
 }
