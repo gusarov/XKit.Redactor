@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="XKit.Redactor.Implementation/XKit.Redactor.Implementation.csproj" />
+  <Project Path="XKit.Redactor.Tests/XKit.Redactor.Tests.csproj" />
+  <Project Path="XKit.Redactor/XKit.Redactor.csproj" />
+</Solution>
