@@ -43,9 +43,11 @@ The key-shaped call `redactor.Redact(value, "Some:Key")` is an extension method 
 | --- | --- | --- |
 | `Erase` (default) | mask token | mask token |
 | `Mask` | `null` | `""` |
-| `Label` | mask token | mask token |
+| `Label` | the labelled token, exactly as for a real value | same |
 
-Erase never says whether there was anything, so a log line cannot be read to mean "this one is not configured". Mask already reveals something about every secret it touches, so revealing that there was none is consistent with it. Label reveals nothing of the value either, so it follows Erase.
+**`Mask` is the only mode that passes anything through**, because it is the only mode that reveals anything. Erase never says whether there was anything, so a log line cannot be read to mean "this one is not configured".
+
+Label keeps that same property, which is why it does *not* simply return the plain token: under `Key = "Poloniex:ApiKey"`, a null, an empty string and a real key all render `●●●Poloniex:ApiKey●●●`. If null fell back to the bare token you could tell "unset" from "set" by looking, which is the leak the contract exists to prevent. Only when no label resolves at all does it fall back to the plain token — and then there is nothing to tell apart.
 
 ### Mask never applies to a composite span
 

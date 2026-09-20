@@ -92,6 +92,26 @@ public class LabelModeTests
 		);
 	}
 
+	/// <summary>
+	/// The reason the null/empty branch tests <c>Mode == Mask</c> rather than <c>Mode == Erase</c>:
+	/// Mask is the only mode that passes anything through, so everything else hides - and a label
+	/// that resolves must be used even when there was no value, or the output would say "unset"
+	/// where it says "hidden" for a real one, which is the leak the contract exists to prevent.
+	/// </summary>
+	[Test]
+	public void Should_not_let_an_unset_value_be_told_from_a_set_one()
+	{
+		var options = Labelled(key: "Poloniex:ApiKey");
+		var forARealKey = _credential.Redact("abcdefghijklmnop", options);
+
+		Assert.Multiple(() =>
+		{
+			Assert.That(forARealKey, Is.EqualTo("●●●Poloniex:ApiKey●●●"));
+			Assert.That(_credential.Redact(null, options), Is.EqualTo(forARealKey), "a null must not be tellable from a key");
+			Assert.That(_credential.Redact("", options), Is.EqualTo(forARealKey), "nor an empty string");
+		});
+	}
+
 	[Test]
 	public void Should_fall_back_to_erase_when_no_label_resolves()
 	{
