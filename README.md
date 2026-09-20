@@ -4,7 +4,7 @@ One contract for taking secrets out of text before it goes somewhere it cannot b
 
 | Package | Targets | What is in it |
 | --- | --- | --- |
-| `XKit.Redactor` | netstandard2.0, netstandard2.1, net8.0, net9.0, net10.0 | `IRedactor`, `RedactorOptions`, `RedactionMode`, the rule-based `CredentialRedactor`, `Mask()` and `Redact(secret)` string helpers |
+| `XKit.Redactor` | netstandard2.0, netstandard2.1, net8.0, net9.0, net10.0 | `IRedactor`, `RedactorOptions`, `RedactionMode`, the rule-based `CredentialRedactor`, `RedactedException`, `Mask()` and `Redact(secret)` string helpers |
 | `XKit.Redactor.Implementation` | net8.0, net9.0, net10.0 | `EntropyRedactor` - finds secrets by how random they look, with an embedded English + developer word list |
 
 ## The contract
@@ -50,6 +50,21 @@ services.AddSingleton(new WordDictionary(["poloniex", "apextroid"])); // product
 services.AddSingleton<IRedactor, EntropyRedactor>();
 ```
 
+## Wrapping a failure: `RedactedException`
+
+Hiding a secret is a legitimate reason to wrap an exception. It is never a reason to drop one — so this type has **no constructor that omits the inner exception**, and the message is redacted on construction so a call site cannot hand it raw text:
+
+```csharp
+catch (MongoConfigurationException ex)
+{
+	throw new RedactedException($"ConnectionStrings:Default is not valid ({connectionString})", ex);
+}
+```
+
+The redactor is the third parameter and optional — `CredentialRedactor.Default` when omitted, which is the right answer where there is nothing to inject. `ToString()` runs the redactor over the **whole formatted chain**, so a secret quoted by the *inner* exception's message never reaches a log sink either. It is a sealed override and there is no switch to disable it: the cost is one redactor pass over text that already cost a stack-trace materialisation, and a switch is what someone flips while chasing a number in a log loop.
+
+**Check your library first.** A well-behaved one already redacts its own messages. Verified for MongoDB.Driver 3.11.2: every malformed connection string throws `MongoConfigurationException` with the password absent from both `Message` and `ToString()` — `mongodb://<hidden>@host/db`. Note that `MongoUrl.ToString()` on a *valid* url does round-trip the password in full, so the redaction is in the error path only. Write a test that fails if any of that changes.
+
 ## String helpers
 
 ```csharp
@@ -69,10 +84,4 @@ message.Redact(connectionString);       // erases a known secret, and its passwo
 dotnet test XKit.Redactor.slnx
 ```
 
-Publishing is manual: bump `<Version>` in both csproj files, then
-
-```bash
-dotnet pack XKit.Redactor.slnx -c Release
-```
-
-and `dotnet nuget push` the two `.nupkg` files.
+Publishing is automatic: bump `<Version>` in both csproj files and push to `master`. The `XKit.Redactor` pipeline in the `GitHubNugets` Azure DevOps project builds, tests, packs and pushes both packages to nuget.org.

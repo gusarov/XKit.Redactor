@@ -49,6 +49,19 @@ public class CredentialRedactor : IRedactor
 		public bool IsolatesTheSecret { get; }
 	}
 
+	/// <summary>
+	/// A shared instance for callers with nowhere to keep one of their own - notably
+	/// <see cref="RedactedException"/> when it is handed no redactor. Constructing a redactor
+	/// compiles three regexes, which is far too much work to repeat per exception, and the type
+	/// holds no per-call state, so one instance is safe to share across threads.
+	///
+	/// <para>
+	/// Anything with a composition root should register an <see cref="IRedactor"/> there instead and
+	/// let it be injected; this exists for the places that cannot.
+	/// </para>
+	/// </summary>
+	public static CredentialRedactor Default { get; } = new CredentialRedactor();
+
 	private readonly Rule[] _rules =
 	[
 		// scheme://user:password@host -> scheme://***@host. The user name goes as well: host, database

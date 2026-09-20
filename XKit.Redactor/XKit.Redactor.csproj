@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Description>IRedactor: one contract for taking secrets out of text before it is logged, plus a cheap rule-based implementation and the Mask() partial-reveal helper. The entropy-based detector is in XKit.Redactor.Implementation.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
